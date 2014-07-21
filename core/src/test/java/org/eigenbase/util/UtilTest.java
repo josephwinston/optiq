@@ -945,6 +945,9 @@ public class UtilTest {
     final BitSet empty = BitSets.of();
     assertTrue(BitSets.contains(BitSets.range(20, 25), empty));
     assertTrue(BitSets.contains(empty, empty));
+    assertFalse(BitSets.contains(empty, BitSets.of(0)));
+    assertFalse(BitSets.contains(empty, BitSets.of(1)));
+    assertFalse(BitSets.contains(empty, BitSets.of(1000)));
     assertTrue(BitSets.contains(BitSets.of(1, 4, 7), BitSets.of(1, 4, 7)));
   }
 
