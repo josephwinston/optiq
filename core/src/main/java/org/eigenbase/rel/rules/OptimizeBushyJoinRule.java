@@ -17,12 +17,13 @@
 */
 package org.eigenbase.rel.rules;
 
-import java.util.*;
+import java.util.List;
 
 import org.eigenbase.rel.*;
 import org.eigenbase.relopt.*;
 import org.eigenbase.rex.*;
-import org.eigenbase.util.Util;
+
+import com.google.common.collect.Lists;
 
 /**
  * Planner rule that finds an approximately optimal ordering for join operators
@@ -51,7 +52,29 @@ public class OptimizeBushyJoinRule extends RelOptRule {
     final LoptMultiJoin multiJoin = new LoptMultiJoin(multiJoinRel);
 
     final RexBuilder rexBuilder = multiJoinRel.getCluster().getRexBuilder();
-    Util.discard(multiJoin);
+    final List<Edge> unusedEdges = Lists.newArrayList();
+    final List<Edge> usedEdges = Lists.newArrayList();
+    while (!unusedEdges.isEmpty()) {
+      final int edgeOrdinal =
+          chooseBestEdge(unusedEdges);
+      final Edge edge = unusedEdges.remove(edgeOrdinal);
+      usedEdges.add(edge);
+
+      // Re-compute selectivity of edges above the one just chosen.
+      // Suppose that we just chose the edge between "product" (10k rows) and
+      // "product_class" (10 rows). Each of those vertices are now replaced by a
+      // new vertex "P-PC" (1k rows).
+    }
+  }
+
+  int chooseBestEdge(List<Edge> edges) {
+    return 0;
+  }
+  /** Information about a join-condition between two factors. */
+  static class Edge {
+    int sourceFactor;
+    int targetFactor;
+    RexNode condition;
   }
 }
 

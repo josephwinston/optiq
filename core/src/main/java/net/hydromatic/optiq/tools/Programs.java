@@ -120,7 +120,7 @@ public class Programs {
           RelTraitSet requiredOutputTraits) {
         final int joinCount = RelOptUtil.countJoins(rel);
         final Program program;
-        if (joinCount < 6) {
+        if (joinCount < (bushy ? 2 : 6)) {
           program = ofRules(rules);
         } else {
           // Create a program that gathers together joins as a MultiJoinRel.

@@ -921,6 +921,8 @@ public class UtilTest {
     ImmutableIntList list = ImmutableIntList.of();
     assertEquals(0, list.size());
     assertEquals(list, Collections.<Integer>emptyList());
+    assertThat(list.toString(), equalTo("[]"));
+    assertThat(BitSets.of(list), equalTo(new BitSet()));
 
     list = ImmutableIntList.of(1, 3, 5);
     assertEquals(3, list.size());

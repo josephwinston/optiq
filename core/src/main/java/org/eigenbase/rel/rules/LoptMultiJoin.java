@@ -29,6 +29,8 @@ import org.eigenbase.util.IntList;
 
 import net.hydromatic.optiq.util.BitSets;
 
+import com.google.common.collect.ImmutableList;
+
 /**
  * Utility class that keeps track of the join factors that
  * make up a {@link MultiJoinRel}.
@@ -56,7 +58,7 @@ public class LoptMultiJoin {
   /**
    * Number of factors into the MultiJoinRel
    */
-  private int nJoinFactors;
+  private final int nJoinFactors;
 
   /**
    * Total number of fields in the MultiJoinRel
@@ -66,21 +68,21 @@ public class LoptMultiJoin {
   /**
    * Original inputs into the MultiJoinRel
    */
-  private List<RelNode> joinFactors;
+  private final ImmutableList<RelNode> joinFactors;
 
   /**
    * If a join factor is null generating in a left or right outer join,
    * joinTypes indicates the join type corresponding to the factor. Otherwise,
    * it is set to INNER.
    */
-  private List<JoinRelType> joinTypes;
+  private final ImmutableList<JoinRelType> joinTypes;
 
   /**
    * If a join factor is null generating in a left or right outer join, the
    * bitmap contains the non-null generating factors that the null generating
    * factor is dependent upon
    */
-  private BitSet [] outerJoinFactors;
+  private final BitSet [] outerJoinFactors;
 
   /**
    * Bitmap corresponding to the fields projected from each join factor, after
@@ -134,7 +136,7 @@ public class LoptMultiJoin {
   /**
    * Type factory
    */
-  RelDataTypeFactory factory;
+  final RelDataTypeFactory factory;
 
   /**
    * Indicates for each factor whether its join can be removed because it is
@@ -168,7 +170,7 @@ public class LoptMultiJoin {
 
   public LoptMultiJoin(MultiJoinRel multiJoin) {
     this.multiJoin = multiJoin;
-    joinFactors = multiJoin.getInputs();
+    joinFactors = ImmutableList.copyOf(multiJoin.getInputs());
     nJoinFactors = joinFactors.size();
     projFields = multiJoin.getProjFields();
     joinFieldRefCountsMap = multiJoin.getCopyJoinFieldRefCountsMap();
@@ -197,7 +199,23 @@ public class LoptMultiJoin {
       start += nFieldsInJoinFactor[i];
     }
 
-    setOuterJoinInfo();
+    // Extract outer join information from the join factors, including the type
+    // of outer join and the factors that a null-generating factor is dependent
+    // upon.
+    joinTypes = ImmutableList.copyOf(multiJoin.getJoinTypes());
+    List<RexNode> outerJoinConds = this.multiJoin.getOuterJoinConditions();
+    outerJoinFactors = new BitSet[nJoinFactors];
+    for (int i = 0; i < nJoinFactors; i++) {
+      if (outerJoinConds.get(i) != null) {
+        // set a bitmap containing the factors referenced in the
+        // ON condition of the outer join; mask off the factor
+        // corresponding to the factor itself
+        BitSet dependentFactors =
+            getJoinFilterFactorBitmap(outerJoinConds.get(i), false);
+        dependentFactors.clear(i);
+        outerJoinFactors[i] = dependentFactors;
+      }
+    }
 
     // determine which join factors each join filter references
     setJoinFilterRefs();
@@ -404,28 +422,6 @@ public class LoptMultiJoin {
   }
 
   /**
-   * Extracts outer join information from the join factors, including the type
-   * of outer join and the factors that a null-generating factor is dependent
-   * upon.
-   */
-  private void setOuterJoinInfo() {
-    joinTypes = multiJoin.getJoinTypes();
-    List<RexNode> outerJoinConds = multiJoin.getOuterJoinConditions();
-    outerJoinFactors = new BitSet[nJoinFactors];
-    for (int i = 0; i < nJoinFactors; i++) {
-      if (outerJoinConds.get(i) != null) {
-        // set a bitmap containing the factors referenced in the
-        // ON condition of the outer join; mask off the factor
-        // corresponding to the factor itself
-        BitSet dependentFactors =
-            getJoinFilterFactorBitmap(outerJoinConds.get(i), false);
-        dependentFactors.clear(i);
-        outerJoinFactors[i] = dependentFactors;
-      }
-    }
-  }
-
-  /**
    * Returns a bitmap representing the factors referenced in a join filter
    *
    * @param joinFilter the join filter
@@ -604,29 +600,7 @@ public class LoptMultiJoin {
   public boolean hasAllFactors(
       LoptJoinTree joinTree,
       BitSet factorsNeeded) {
-    BitSet childFactors = new BitSet(nJoinFactors);
-    getChildFactors(joinTree, childFactors);
-    return BitSets.contains(childFactors, factorsNeeded);
-  }
-
-  /**
-   * Sets a bitmap representing all fields corresponding to a RelNode
-   *
-   * @param rel Relational expression for which fields will be set
-   * @param fields bitmap containing set bits for each field in a RelNode
-   */
-  public void setFieldBitmap(LoptJoinTree rel, BitSet fields) {
-    // iterate through all factors within the RelNode
-    BitSet factors = new BitSet(nJoinFactors);
-    getChildFactors(rel, factors);
-    for (int factor = factors.nextSetBit(0);
-        factor >= 0;
-        factor = factors.nextSetBit(factor + 1)) {
-      // set a bit for each field
-      for (int i = 0; i < nFieldsInJoinFactor[factor]; i++) {
-        fields.set(joinStart[factor] + i);
-      }
-    }
+    return BitSets.contains(BitSets.of(joinTree.getTreeOrder()), factorsNeeded);
   }
 
   /**
@@ -636,9 +610,7 @@ public class LoptMultiJoin {
    * @param childFactors bitmap to be set
    */
   public void getChildFactors(LoptJoinTree joinTree, BitSet childFactors) {
-    List<Integer> children = new ArrayList<Integer>();
-    joinTree.getTreeOrder(children);
-    for (int child : children) {
+    for (int child : joinTree.getTreeOrder()) {
       childFactors.set(child);
     }
   }
