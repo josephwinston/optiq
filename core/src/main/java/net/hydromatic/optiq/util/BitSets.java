@@ -105,14 +105,18 @@ public final class BitSets {
   }
 
   /**
-   * Converts a bitset to an array.
+   * Converts a BitSet to an array.
    *
    * @param bitSet Bit set
-   * @return List of set bits
+   * @return Array of set bits
    */
-  public static Integer[] toArray(final BitSet bitSet) {
-    final List<Integer> list = toList(bitSet);
-    return list.toArray(new Integer[list.size()]);
+  public static int[] toArray(final BitSet bitSet) {
+    final int[] integers = new int[bitSet.cardinality()];
+    int j = 0;
+    for (int i = bitSet.nextSetBit(0); i >= 0; i = bitSet.nextSetBit(i + 1)) {
+      integers[j++] = i;
+    }
+    return integers;
   }
 
   /**
@@ -214,6 +218,16 @@ public final class BitSets {
     for (Number number : list) {
       bitSet.set(number.intValue());
     }
+  }
+
+  /** Returns a BitSet that is the union of the given BitSets. Does not modify
+   * any of the inputs. */
+  public static BitSet union(BitSet set0, BitSet... sets) {
+    final BitSet s = (BitSet) set0.clone();
+    for (BitSet set : sets) {
+      s.or(set);
+    }
+    return s;
   }
 }
 
