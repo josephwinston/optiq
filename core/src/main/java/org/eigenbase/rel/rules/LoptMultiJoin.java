@@ -30,6 +30,7 @@ import org.eigenbase.util.IntList;
 import net.hydromatic.optiq.util.BitSets;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 
 /**
  * Utility class that keeps track of the join factors that
@@ -175,17 +176,13 @@ public class LoptMultiJoin {
     projFields = multiJoin.getProjFields();
     joinFieldRefCountsMap = multiJoin.getCopyJoinFieldRefCountsMap();
 
-    joinFilters = new ArrayList<RexNode>();
-    RelOptUtil.decomposeConjunction(
-        multiJoin.getJoinFilter(),
-        joinFilters);
+    joinFilters =
+        Lists.newArrayList(RelOptUtil.conjunctions(multiJoin.getJoinFilter()));
 
     allJoinFilters = new ArrayList<RexNode>(joinFilters);
     List<RexNode> outerJoinFilters = multiJoin.getOuterJoinConditions();
     for (int i = 0; i < nJoinFactors; i++) {
-      List<RexNode> ojFilters = new ArrayList<RexNode>();
-      RelOptUtil.decomposeConjunction(outerJoinFilters.get(i), ojFilters);
-      allJoinFilters.addAll(ojFilters);
+      allJoinFilters.addAll(RelOptUtil.conjunctions(outerJoinFilters.get(i)));
     }
 
     int start = 0;
@@ -430,18 +427,21 @@ public class LoptMultiJoin {
    *
    * @return the bitmap containing the factor references
    */
-  private BitSet getJoinFilterFactorBitmap(
+  BitSet getJoinFilterFactorBitmap(
       RexNode joinFilter,
       boolean setFields) {
-    BitSet fieldRefBitmap = new BitSet(nTotalFields);
-    joinFilter.accept(new RelOptUtil.InputFinder(fieldRefBitmap));
+    BitSet fieldRefBitmap = fieldBitmap(joinFilter);
     if (setFields) {
       fieldsRefByJoinFilter.put(joinFilter, fieldRefBitmap);
     }
 
-    BitSet factorRefBitmap = new BitSet(nJoinFactors);
-    setFactorBitmap(factorRefBitmap, fieldRefBitmap);
-    return factorRefBitmap;
+    return factorBitmap(fieldRefBitmap);
+  }
+
+  private BitSet fieldBitmap(RexNode joinFilter) {
+    BitSet fieldRefBitmap = new BitSet(nTotalFields);
+    joinFilter.accept(new RelOptUtil.InputFinder(fieldRefBitmap));
+    return fieldRefBitmap;
   }
 
   /**
@@ -470,17 +470,17 @@ public class LoptMultiJoin {
    * Sets the bitmap indicating which factors a filter references based on
    * which fields it references
    *
-   * @param factorRefBitmap bitmap representing factors referenced that will
-   * be set by this method
    * @param fieldRefBitmap bitmap representing fields referenced
+   * @return bitmap representing factors referenced that will
+   * be set by this method
    */
-  private void setFactorBitmap(
-      BitSet factorRefBitmap,
-      BitSet fieldRefBitmap) {
+  private BitSet factorBitmap(BitSet fieldRefBitmap) {
+    BitSet factorRefBitmap = new BitSet(nJoinFactors);
     for (int field : BitSets.toIter(fieldRefBitmap)) {
       int factor = findRef(field);
       factorRefBitmap.set(factor);
     }
+    return factorRefBitmap;
   }
 
   /**
@@ -536,11 +536,9 @@ public class LoptMultiJoin {
         int leftFactor = factorRefs.nextSetBit(0);
         int rightFactor = factorRefs.nextSetBit(leftFactor + 1);
 
-        BitSet leftFields = new BitSet(nTotalFields);
-        List<RexNode> operands = ((RexCall) joinFilter).getOperands();
-        operands.get(0).accept(new RelOptUtil.InputFinder(leftFields));
-        BitSet leftBitmap = new BitSet(nJoinFactors);
-        setFactorBitmap(leftBitmap, leftFields);
+        final RexCall call = (RexCall) joinFilter;
+        BitSet leftFields = fieldBitmap(call.getOperands().get(0));
+        BitSet leftBitmap = factorBitmap(leftFields);
 
         // filter contains only two factor references, one on each
         // side of the operator
@@ -779,6 +777,31 @@ public class LoptMultiJoin {
     RemovableSelfJoin selfJoin = removableSelfJoinPairs.get(rightFactor);
     assert selfJoin.getRightFactor() == rightFactor;
     return selfJoin.getColumnMapping().get(rightOffset);
+  }
+
+  public Edge createEdge(RexNode condition) {
+    BitSet fieldRefBitmap = fieldBitmap(condition);
+    BitSet factorRefBitmap = factorBitmap(fieldRefBitmap);
+    return new Edge(condition, factorRefBitmap, fieldRefBitmap);
+  }
+
+  /** Information about a join-condition. */
+  static class Edge {
+    final BitSet factors;
+    final BitSet columns;
+    final RexNode condition;
+
+    Edge(RexNode condition, BitSet factors, BitSet columns) {
+      this.condition = condition;
+      this.factors = factors;
+      this.columns = columns;
+    }
+
+    @Override public String toString() {
+      return "Edge(condition: " + condition
+          + ", factors: " + factors
+          + ", columns: " + columns + ")";
+    }
   }
 
   //~ Inner Classes ----------------------------------------------------------
